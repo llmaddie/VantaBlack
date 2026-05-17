@@ -1,32 +1,37 @@
-#![no_std]
-
-use core::arch::asm;
-
+use std::arch::asm;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CpuidResult {
-    pub eax: u32;
-    pub ebx: u32;
-    pub ecx: u32;
-    pub edx: u32;
+    pub eax: u32,
+    pub ebx: u32,
+    pub ecx: u32,
+    pub edx: u32,
 }
 
 #[inline]
-pub fn cpuid(eax_in: u32, exc_in: u32) -> CpuidResult {
-    let eax: u32;
+pub fn cpuid(eax_in: u32, ecx_in: u32) -> CpuidResult {
+    let mut eax = eax_in;
+    let mut ecx = ecx_in;
     let ebx: u32;
-    let ecx: u32;
     let edx: u32;
 
     unsafe {
         asm!(
-            "cpuid"
-            inlateout("eax") eax_in => eax,
-            lateout("ebx") ebx,
-            inlateout("ecx") ecx_in => ecx,
+            "push rbx",
+            "cpuid",
+            "mov {ebx_out:e}, ebx",
+            "pop rbx",
+            ebx_out = lateout(reg) ebx,
+            inout("eax") eax,
+            inout("ecx") ecx,
             lateout("edx") edx,
-            options(nomem, nostack),
         );
     }
-    CpuidResult { eax, ebx, ecx, edx }
+
+    CpuidResult {
+        eax,
+        ebx,
+        ecx,
+        edx,
+    }
 }

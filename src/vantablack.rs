@@ -1,26 +1,27 @@
-#![doc = "vantablack kernel module"]
+mod cpuid;
 
 use kernel::prelude::*;
 
 module! {
-    type: RustMinimal,
-    name: "vantablack",
-    authors: ["maddie"],
-    description: "module kernel minimal on rust",
+    type: MyModule,
+    name: "my_cpuid",
+    author: "toi",
+    description: "CPUID test",
     license: "GPL",
 }
 
-struct RustMinimal;
+struct MyModule;
 
-impl kernel::Module for RustMinimal {
+impl kernel::Module for MyModule {
     fn init(_module: &'static ThisModule) -> Result<Self> {
-        pr_info!("Rust minimal module load\n");
-        Ok(RustMinimal)
-    }
-}
 
-impl Drop for RustMinimal {
-    fn drop(&mut self) {
-        pr_info!("Rust module unload\n");
+        let cpu = cpuid::cpuid(0, 0);
+
+        pr_info!("EAX: {}\n", cpu.eax);
+        pr_info!("EBX: {}\n", cpu.ebx);
+        pr_info!("ECX: {}\n", cpu.ecx);
+        pr_info!("EDX: {}\n", cpu.edx);
+
+        Ok(MyModule)
     }
 }
