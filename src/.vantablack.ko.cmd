@@ -1,1 +1,0 @@
-savedcmd_vantablack.ko := ld.lld -r -m elf_x86_64 --fatal-warnings -z noexecstack --build-id=sha1  -T /home/mad/linux/scripts/module.lds -o vantablack.ko vantablack.o vantablack.mod.o .module-common.o
