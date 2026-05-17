@@ -24,6 +24,12 @@ impl kernel::Module for MyModule {
         pr_info!("ECX: {}\n", cpu.ecx);
         pr_info!("EDX: {}\n", cpu.edx);
 
-        Ok(MyModule)
+        let vmx_bit = (cpu.ecx >> 5) & 1;
+        if vmx_bit == 1 {
+            pr_info!("vantablack: VMX intel-VT-X is supported\n")
+        } else {
+            pr_info!("vantablack: VMX Intel Vt-X not supported\n")
+        }
+    Ok(MyModule)
     }
 }
