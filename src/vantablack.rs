@@ -19,10 +19,10 @@ impl kernel::Module for MyModule {
 
         let cpu = cpuid::cpuid(0, 0);
 
-        pr_info!("EAX: {}\n", cpu.eax);
-        pr_info!("EBX: {}\n", cpu.ebx);
-        pr_info!("ECX: {}\n", cpu.ecx);
-        pr_info!("EDX: {}\n", cpu.edx);
+        pr_info!("EAX: 0x{:08x}\n", cpu.eax);
+        pr_info!("EBX: 0x{:08x}\n", cpu.ebx);
+        pr_info!("ECX: 0x{:08x}\n", cpu.ecx);
+        pr_info!("EDX: 0x{:08x}\n", cpu.edx);
 
         let vmx_bit = (cpu.ecx >> 5) & 1;
         if vmx_bit == 1 {
