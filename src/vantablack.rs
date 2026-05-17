@@ -19,7 +19,7 @@ unsafe fn read_msr(msr: u32) -> u64 {
     let low: u32;
     let high: u32;
 
-    unsafe { // <-- wrap the inline assembly in its own unsafe block
+    unsafe { // wrap the inline assembly to his own unsafe 
         core::arch::asm!(
             "rdmsr",
             in("ecx") msr,
