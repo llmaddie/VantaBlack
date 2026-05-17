@@ -1,7 +1,9 @@
-use std::arch::asm;
+//! CPUID instruction to the Kernel Module 
+#![allow(missing_docs)]
+use core::arch::asm;
 
 #[derive(Debug, Clone, Copy)]
-pub struct CpuidResult {
+pub(crate) struct CpuidResult {
     pub eax: u32,
     pub ebx: u32,
     pub ecx: u32,
@@ -9,7 +11,7 @@ pub struct CpuidResult {
 }
 
 #[inline]
-pub fn cpuid(eax_in: u32, ecx_in: u32) -> CpuidResult {
+pub(crate) fn cpuid(eax_in: u32, ecx_in: u32) -> CpuidResult {
     let mut eax = eax_in;
     let mut ecx = ecx_in;
     let ebx: u32;

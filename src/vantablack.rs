@@ -1,3 +1,5 @@
+//! CPUID instruction to the Kernel Module 
+#![allow(missing_docs)]
 mod cpuid;
 
 use kernel::prelude::*;
@@ -5,7 +7,7 @@ use kernel::prelude::*;
 module! {
     type: MyModule,
     name: "my_cpuid",
-    author: "toi",
+    authors: ["toi"],
     description: "CPUID test",
     license: "GPL",
 }
