@@ -1,5 +1,3 @@
-//! CPUID instruction to the Kernel Module 
-#![allow(missing_docs)]
 use core::arch::asm;
 
 #[derive(Debug, Clone, Copy)]
