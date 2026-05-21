@@ -119,7 +119,7 @@ pub enum VmxInstructionError {
 
 #[repr(C)]
 pub struct InveptDescriptor {
-    pub eptp: u64,
+    pub eptp: u64,  
     pub reserved: u64,
 }
 
