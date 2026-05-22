@@ -398,3 +398,52 @@ impl Drop for VmcsRegion {
     }
 }
 ```
+### 3.2.5 Complete VMX Initialization Sequence
+```rs
+
+pub unsafe fn init_vmx() -> Result<(), VmxError> {
+    // Step 1: Enable VMX in CR4
+    let mut cr4 = read_cr4();
+    cr4 |= 1 << 13;  // CR4.VMXE
+    write_cr4(cr4);
+
+    // Step 2: Allocate and initialize VMXON region
+    let vmxon = VmxonRegion::new()?;
+
+    // Step 3: Enter VMX operation
+    vmxon.activate()?;
+    pr_alert!("vantablack: VMXON successful\n");
+
+    // Step 4: Allocate VMCS
+    let vmcs = VmcsRegion::new()?;
+
+    // Step 5: Clear and load VMCS
+    vmcs.clear()?;
+    vmcs.load()?;
+    pr_alert!("vantablack: VMCS loaded\n");
+
+    // VMX is now active and ready for configuration
+    Ok(())
+}
+```
+
+## 3.3 Key Technical Considerations
+
+### Memory Alignment
+
+Both VMXON and VMCS require **4KB alignment** (not just 4-byte alignment). The physical address must have bits [11:0] equal to zero. This is verified with `(pa & 0xFFF) != 0`.
+
+### Volatile Writes
+
+The VMX revision ID must be written using `core::ptr::write_volatile()` because the CPU reads the VMXON region directly from physical memory without cache coherency. A regular write might be cached and invisible to the VMX hardware.
+
+### Error Handling
+
+VMX instructions set RFLAGS.CF (Carry Flag) or RFLAGS.ZF (Zero Flag) on error:
+
+- **CF=1**: VMfailInvalid - VMCS/VMXON pointer is invalid
+    
+- **ZF=1**: VMfailValid - Error code available in VM-instruction error field
+    
+
+These flags are checked after each VMX instruction to ensure correct operation.
