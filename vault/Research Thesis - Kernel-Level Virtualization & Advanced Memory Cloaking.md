@@ -4,7 +4,7 @@ First, i made my research about how LKM works, how Hypervisor Work VT-X i.e.....
 
 
 16/05/
-At 12:03am, I wrote a basic LKM that can be compiled with a Makefile and run on a Debian VM (every test should be done on this VM, nothing on my Host). I configured the VM and wrote this code:
+At 12:03am, I wrote a basic LKM that can be compiled with a Makefile and run on a Debian VM build with Rust for linux  (every test should be done on this VM, nothing on my Host). I configured the VM and wrote this code:
 ````rs
 #![doc = "vantablack kernel module"]
 
@@ -447,3 +447,4 @@ VMX instructions set RFLAGS.CF (Carry Flag) or RFLAGS.ZF (Zero Flag) on error:
     
 
 These flags are checked after each VMX instruction to ensure correct operation.
+# Chapter 4: Project Architecture & Cross-Platform Design
