@@ -7,7 +7,7 @@ use kernel::prelude::*;
 module! {
     type: MyModule,
     name: "my_cpuid",
-    authors: ["toi"],
+    authors: ["maddie"],
     description: "CPUID test",
     license: "GPL",
 }
