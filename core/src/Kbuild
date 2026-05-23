@@ -1,1 +1,11 @@
-obj-m += vantablack.o
+# Kbuild - Rust for Linux compile le .rs directement !
+obj-m := vantablack.o
+
+# Indique que vantablack est écrit en Rust
+vantablack-y := main.o
+
+# Si tu as plusieurs fichiers Rust :
+# vantablack-y += cpuid.o msr.o vmx.o
+
+# Flags pour le binding Rust (si besoin de générer)
+# bindgen_flags-y += --with-derive-default
