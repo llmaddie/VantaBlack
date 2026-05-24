@@ -448,3 +448,6 @@ VMX instructions set RFLAGS.CF (Carry Flag) or RFLAGS.ZF (Zero Flag) on error:
 
 These flags are checked after each VMX instruction to ensure correct operation.
 # Chapter 4: Project Architecture & Cross-Platform Design
+
+My project is cross-platform so i must handle VMX/SVM ( AMD & INTEL) virtualization module 
+and for a windows distribution or linux distribution so i abstract  my project on 3 directory : platform / hypervisor core 
