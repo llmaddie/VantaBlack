@@ -1,181 +1,230 @@
-// ============================================
-// VANTABLACK HYPERVISOR - Cross-Platform Type-2 Hypervisor
-// Supports: Intel VMX (VT-x) | AMD SVM (AMD-V)
-// Platforms: Linux LKM | Windows Driver (future)
-// Features: Blue Pilling | Shadow Walker | EPT/NPT Hooking
-// ============================================
-
 #![no_std]
 #![no_main]
-#![feature(core_intrinsics)]
-#![feature(asm_const)]
-#![feature(naked_functions)]
-
-extern crate alloc;
 
 use core::panic::PanicInfo;
-
-// Platform abstraction
-#[cfg(target_os = "linux")]
-use crate::platform::linux as platform;
-#[cfg(target_os = "windows")]
-use crate::platform::windows as platform;
-
-// Architecture detection
-use crate::arch::{HypervisorArch, ArchType};
-use crate::hypervisor::Hypervisor;
-use crate::utils::log::LogLevel;
-
-mod arch;
-mod platform;
-mod hypervisor;
-mod utils;
-mod error;
-
-use error::{HypervisorError, Result};
+use core::arch::asm;
 
 // ============================================
-// LINUX KERNEL MODULE GLUE
+// FFI LINUX - Bindings minimaux
 // ============================================
 
-#[cfg(target_os = "linux")]
-mod linux_exports {
-    use super::*;
-    use platform::ffi::{c_int, c_char, THIS_MODULE};
+mod linux_ffi {
+    use core::ffi::c_void;
     
-    #[no_mangle]
-    pub static mut __this_module: platform::ffi::module = unsafe { core::mem::zeroed() };
+    extern "C" {
+        pub fn __get_free_pages(gfp_mask: u32, order: u32) -> *mut u8;
+        pub fn free_pages(addr: *mut u8, order: u32);
+        pub fn virt_to_phys(virt: *mut u8) -> u64;
+        pub fn printk(fmt: *const u8, ...);
+        pub fn smp_processor_id() -> u32;
+    }
     
-    #[link_section = ".modinfo"]
-    #[used]
-    static MODINFO: [u8; 256] = *b"license=GPL\0author=Vantablack\0description=Cross-platform Type-2 Hypervisor\0";
-    
-    /// Module init - called on insmod
-    #[no_mangle]
-    pub extern "C" fn init_module() -> c_int {
-        match vantablack_init() {
-            Ok(_) => 0,
-            Err(e) => {
-                log::error!("Vantablack init failed: {:?}", e);
-                -1
+    pub const GFP_KERNEL: u32 = 0xCC0;
+    pub const __GFP_ZERO: u32 = 0x8000;
+}
+
+// ============================================
+// MACROS PRINTK
+// ============================================
+
+#[macro_export]
+macro_rules! pr_info {
+    ($($arg:tt)*) => {
+        unsafe {
+            let msg = concat!($($arg)*, "\0");
+            $crate::linux_ffi::printk(msg.as_ptr());
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! pr_alert {
+    ($($arg:tt)*) => {
+        unsafe {
+            let msg = concat!($($arg)*, "\0");
+            $crate::linux_ffi::printk(msg.as_ptr());
+        }
+    };
+}
+
+// ============================================
+// CPUID + MSR
+// ============================================
+
+#[derive(Debug, Clone, Copy)]
+pub struct CpuidResult {
+    pub eax: u32,
+    pub ebx: u32,
+    pub ecx: u32,
+    pub edx: u32,
+}
+
+#[inline]
+pub unsafe fn cpuid(eax_in: u32, ecx_in: u32) -> CpuidResult {
+    let mut eax = eax_in;
+    let mut ecx = ecx_in;
+    let ebx: u32;
+    let edx: u32;
+
+    asm!(
+        "push rbx",
+        "cpuid",
+        "mov {ebx_out:e}, ebx",
+        "pop rbx",
+        ebx_out = lateout(reg) ebx,
+        inout("eax") eax,
+        inout("ecx") ecx,
+        lateout("edx") edx,
+    );
+
+    CpuidResult { eax, ebx, ecx, edx }
+}
+
+#[inline]
+pub unsafe fn read_msr(msr: u32) -> u64 {
+    let low: u32;
+    let high: u32;
+    asm!(
+        "rdmsr",
+        in("ecx") msr,
+        out("eax") low,
+        out("edx") high,
+    );
+    ((high as u64) << 32) | (low as u64)
+}
+
+#[inline]
+pub unsafe fn read_cr4() -> u64 {
+    let val: u64;
+    asm!("mov {}, cr4", out(reg) val, options(nostack, preserves_flags));
+    val
+}
+
+#[inline]
+pub unsafe fn write_cr4(val: u64) {
+    asm!("mov cr4, {}", in(reg) val, options(nostack, preserves_flags));
+}
+
+// ============================================
+// VMXON / VMCS
+// ============================================
+
+pub struct VmxonRegion {
+    va: *mut u8,
+    pa: u64,
+}
+
+impl VmxonRegion {
+    pub unsafe fn new() -> Option<Self> {
+        let va = linux_ffi::__get_free_pages(
+            linux_ffi::GFP_KERNEL | linux_ffi::__GFP_ZERO, 
+            0
+        );
+        if va.is_null() {
+            return None;
+        }
+
+        let pa = linux_ffi::virt_to_phys(va);
+        if (pa & 0xFFF) != 0 {
+            linux_ffi::free_pages(va, 0);
+            return None;
+        }
+
+        // Write VMX revision ID
+        let vmx_basic = read_msr(0x480);
+        core::ptr::write_volatile(va as *mut u32, vmx_basic as u32);
+
+        pr_alert!("VMXON region: PA={:#x}, rev={:#x}\n", pa, vmx_basic as u32);
+
+        Some(Self { va, pa })
+    }
+
+    pub unsafe fn activate(&self) -> Result<(), ()> {
+        let mut rflags: u64;
+        asm!(
+            "vmxon [{0}]",
+            in(reg) &self.pa,
+            out("rflags") rflags,
+            options(nostack, preserves_flags)
+        );
+
+        if (rflags & 0x1) != 0 || (rflags & 0x40) != 0 {
+            return Err(());
+        }
+        Ok(())
+    }
+}
+
+impl Drop for VmxonRegion {
+    fn drop(&mut self) {
+        unsafe { linux_ffi::free_pages(self.va, 0); }
+    }
+}
+
+// ============================================
+// MODULE INIT / EXIT
+// ============================================
+
+#[no_mangle]
+pub extern "C" fn vantablack_init() -> i32 {
+    unsafe {
+        // 1. CPUID check
+        let cpu = cpuid(1, 0);
+        let vmx_bit = (cpu.ecx >> 5) & 1;
+        if vmx_bit == 0 {
+            pr_alert!("VMX not available\n");
+            return -1;
+        }
+
+        // 2. MSR check
+        let msr = read_msr(0x3A);
+        if (msr & 1) == 0 || (msr & (1 << 2)) == 0 {
+            pr_alert!("VMX disabled by BIOS\n");
+            return -1;
+        }
+
+        pr_info!("CPUID/MSR checks passed\n");
+
+        // 3. Enable VMX
+        let mut cr4 = read_cr4();
+        cr4 |= 1 << 13; // VMXE
+        write_cr4(cr4);
+
+        // 4. VMXON
+        let vmxon = match VmxonRegion::new() {
+            Some(v) => v,
+            None => {
+                pr_alert!("VMXON allocation failed\n");
+                return -1;
             }
+        };
+
+        if let Err(_) = vmxon.activate() {
+            pr_alert!("VMXON failed\n");
+            return -1;
         }
+
+        pr_alert!("VMXON SUCCESS!\n");
     }
-    
-    /// Module exit - called on rmmod
-    #[no_mangle]
-    pub extern "C" fn cleanup_module() {
-        if let Err(e) = vantablack_exit() {
-            log::error!("Vantablack exit failed: {:?}", e);
-        }
-    }
+
+    0
 }
 
-// ============================================
-// WINDOWS DRIVER GLUE (Future implementation)
-// ============================================
-
-#[cfg(target_os = "windows")]
-mod windows_exports {
-    use super::*;
-    use platform::ffi::{NTSTATUS, PDRIVER_OBJECT, PUNICODE_STRING};
-    
-    #[no_mangle]
-    pub extern "system" fn DriverEntry(
-        _driver_object: PDRIVER_OBJECT,
-        _registry_path: PUNICODE_STRING,
-    ) -> NTSTATUS {
-        match vantablack_init() {
-            Ok(_) => 0, // STATUS_SUCCESS
-            Err(_) => 0xC0000001u32 as NTSTATUS, // STATUS_UNSUCCESSFUL
-        }
-    }
-}
-
-// ============================================
-// CORE INITIALIZATION
-// ============================================
-
-/// Global hypervisor instance (per-CPU array in reality)
-static mut HYPERVISOR: Option<Hypervisor> = None;
-
-/// Main initialization sequence
-fn vantablack_init() -> Result<()> {
-    log::info!("Vantablack Hypervisor v0.1.0");
-    log::info!("Cross-platform: Intel VMX / AMD SVM");
-    
-    // 1. Detect CPU architecture
-    let arch_type = arch::detect_architecture()?;
-    log::info!("Detected architecture: {:?}", arch_type);
-    
-    // 2. Check CPU features (VMX/SVM support)
-    if !arch::check_cpu_support(arch_type) {
-        return Err(HypervisorError::CpuNotSupported);
-    }
-    
-    // 3. Initialize per-CPU data structures
-    let cpu_count = platform::cpu::get_cpu_count();
-    log::info!("CPU count: {}", cpu_count);
-    
-    // 4. Allocate and initialize hypervisor
-    let hv = Hypervisor::new(arch_type, cpu_count)?;
-    
-    // 5. Install hypervisor on all CPUs (IPI)
-    platform::cpu::smp_call_function(|cpu_id| {
-        log::info!("Installing on CPU {}", cpu_id);
-        hv.install_on_cpu(cpu_id)
-    })?;
-    
-    // 6. Blue pill check - are we already virtualized?
-    if hypervisor::blue_pill::detect_nested_virtualization() {
-        log::warn!("Nested virtualization detected - entering stealth mode");
-        hypervisor::blue_pill::enable_stealth_mode();
-    }
-    
-    // Store global instance
+#[no_mangle]
+pub extern "C" fn vantablack_exit() {
     unsafe {
-        HYPERVISOR = Some(hv);
+        asm!("vmxoff", options(nostack, preserves_flags));
+        pr_info!("VMXOFF\n");
     }
-    
-    log::info!("Vantablack installed successfully");
-    Ok(())
-}
-
-/// Cleanup and uninstall
-fn vantablack_exit() -> Result<()> {
-    log::info!("Vantablack shutting down...");
-    
-    unsafe {
-        if let Some(ref hv) = HYPERVISOR {
-            // Uninstall from all CPUs
-            platform::cpu::smp_call_function(|cpu_id| {
-                hv.uninstall_from_cpu(cpu_id)
-            })?;
-            
-            // Cleanup memory
-            hv.destroy()?;
-        }
-        HYPERVISOR = None;
-    }
-    
-    log::info!("Vantablack removed");
-    Ok(())
 }
 
 // ============================================
 // PANIC HANDLER
 // ============================================
 
-#[cfg(target_os = "linux")]
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    log::error!("PANIC: {}", info);
-    unsafe { core::intrinsics::abort() }
-}
-
-#[cfg(target_os = "windows")]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    log::error!("PANIC: {}", info);
-    loop {}
+fn panic(_info: &PanicInfo) -> ! {
+    loop {
+        unsafe { asm!("hlt", options(nomem, nostack)); }
+    }
 }
