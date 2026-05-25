@@ -79,6 +79,7 @@ unsafe{
         options(nostack),
     );
 }
+}
 #[inline]
 pub unsafe fn read_msr(msr: u32) -> u64 {
     let low: u32;
