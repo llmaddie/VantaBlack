@@ -83,19 +83,23 @@ unsafe{
 pub unsafe fn read_msr(msr: u32) -> u64 {
     let low: u32;
     let high: u32;
+    unsafe{
     asm!(
         "rdmsr",
         in("ecx") msr,
         out("eax") low,
         out("edx") high,
     );
+}
     ((high as u64) << 32) | (low as u64)
 }
 
 #[inline]
 pub unsafe fn read_cr4() -> u64 {
-    let val: u64;
+    let val: u64; 
+    unsafe{
     asm!("mov {}, cr4", out(reg) val, options(nostack, preserves_flags));
+    }
     val
 }
 
@@ -226,4 +230,4 @@ fn panic(_info: &PanicInfo<'_) -> ! {
     loop {
         unsafe { asm!("hlt", options(nomem, nostack)); }
     }
-}
+    }
