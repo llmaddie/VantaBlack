@@ -30,20 +30,17 @@ mod linux_ffi {
 #[macro_export]
 macro_rules! pr_info {
     ($($arg:tt)*) => {
-        unsafe {
             let msg = concat!($($arg)*, "\0");
             $crate::linux_ffi::printk(msg.as_ptr());
-        }
     };
 }
 
 #[macro_export]
 macro_rules! pr_alert {
     ($($arg:tt)*) => {
-        unsafe {
             let msg = concat!($($arg)*, "\0");
             $crate::linux_ffi::printk(msg.as_ptr());
-        }
+        
     };
 }
 
