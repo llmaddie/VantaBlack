@@ -226,8 +226,10 @@ pub extern "C" fn vantablack_exit() {
 // ============================================
 
 #[panic_handler]
-fn panic(_info: &PanicInfo<'_) -> ! {
+fn panic(_info: &PanicInfo<'_>) -> ! {
     loop {
-        unsafe { asm!("hlt", options(nomem, nostack)); }
+        unsafe {
+            asm!("hlt", options(nomem, nostack));
+        }
     }
-    }
+}
