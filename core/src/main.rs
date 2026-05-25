@@ -9,7 +9,7 @@ use core::arch::asm;
 // ============================================
 
 mod linux_ffi {
-    use core::ffi::c_void;
+   // use core::ffi::c_void; unused so for debug i comment them 
     
     extern "C" {
         pub fn __get_free_pages(gfp_mask: u32, order: u32) -> *mut u8;
@@ -65,21 +65,20 @@ pub unsafe fn cpuid(eax_in: u32, ecx_in: u32) -> CpuidResult {
     let mut ecx = ecx_in;
     let ebx: u32;
     let edx: u32;
-
+unsafe{
     asm!(
-        "push rbx",
+        "mov {tmp:r}, rbx",
         "cpuid",
-        "mov {ebx_out:e}, ebx",
-        "pop rbx",
-        ebx_out = lateout(reg) ebx,
+        "xchg {tmp:r}, rbx",
+
+        tmp = lateout(reg) ebx,
         inout("eax") eax,
         inout("ecx") ecx,
         lateout("edx") edx,
+
+        options(nostack),
     );
-
-    CpuidResult { eax, ebx, ecx, edx }
 }
-
 #[inline]
 pub unsafe fn read_msr(msr: u32) -> u64 {
     let low: u32;
@@ -223,7 +222,7 @@ pub extern "C" fn vantablack_exit() {
 // ============================================
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(_info: &PanicInfo<'_) -> ! {
     loop {
         unsafe { asm!("hlt", options(nomem, nostack)); }
     }
