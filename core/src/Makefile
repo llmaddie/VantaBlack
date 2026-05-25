@@ -1,10 +1,10 @@
-KDIR ?= /lib/modules/$(uname -r)/build
+KDIR ?= /home/mad/linux
 PWD := $(shell pwd)
 
 .PHONY: all clean load unload
 
 all:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C $(KDIR) M=$(PWD) LLVM=1 modules
 
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
