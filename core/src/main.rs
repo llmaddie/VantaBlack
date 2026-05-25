@@ -59,7 +59,7 @@ pub struct CpuidResult {
 #[inline]
 pub unsafe fn cpuid(eax_in: u32, ecx_in: u32) -> CpuidResult {
     let mut eax = eax_in;
-    let mut ecx = ecx_in;
+    let mut ecx = e cx_in;
     let ebx: u32;
     let edx: u32;
 unsafe{
@@ -103,8 +103,9 @@ pub unsafe fn read_cr4() -> u64 {
 
 #[inline]
 pub unsafe fn write_cr4(val: u64) {
+    unsafe{
     asm!("mov cr4, {}", in(reg) val, options(nostack, preserves_flags));
-}
+    }}
 
 // ============================================
 // VMXON / VMCS
@@ -142,12 +143,14 @@ impl VmxonRegion {
 
     pub unsafe fn activate(&self) -> Result<(), ()> {
         let mut rflags: u64;
+        unsafe{
         asm!(
             "vmxon [{0}]",
             in(reg) &self.pa,
             out("rflags") rflags,
             options(nostack, preserves_flags)
         );
+    }
 
         if (rflags & 0x1) != 0 || (rflags & 0x40) != 0 {
             return Err(());
