@@ -142,21 +142,29 @@ impl VmxonRegion {
     }
 
     pub unsafe fn activate(&self) -> Result<(), ()> {
-        let mut rflags: u64;
-        unsafe{
+    let rflags: u64;
+
+    unsafe {
         asm!(
-            "vmxon [{0}]",
-            in(reg) &self.pa,
-            out("rflags") rflags,
-            options(nostack, preserves_flags)
+            "vmxon [{addr}]",
+            "pushfq",
+            "pop {flags}",
+
+            addr = in(reg) &self.pa,
+            flags = lateout(reg) rflags,
+
+            options(nostack)
         );
     }
 
-        if (rflags & 0x1) != 0 || (rflags & 0x40) != 0 {
-            return Err(());
-        }
-        Ok(())
+    let cf = (rflags & (1 << 0)) != 0;
+    let zf = (rflags & (1 << 6)) != 0;
+
+    if cf || zf {
+        return Err(());
     }
+
+    Ok(())
 }
 
 impl Drop for VmxonRegion {
