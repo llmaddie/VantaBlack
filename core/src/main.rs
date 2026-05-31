@@ -1,16 +1,16 @@
-#![no_std]
 #![no_main]
 
-use core::panic::PanicInfo;
 use core::arch::asm;
 use core::sync::atomic::{AtomicPtr, Ordering};
-
+use kernel::alloc::allocator::Kmalloc;
+use kernel::prelude::Box;
+use kernel::alloc::flags;
 // ============================================
-// FFI LINUX - Bindings corrigés
+// FFI LINUX
 // ============================================
 
 mod linux_ffi {
-    extern "C" {
+    unsafe extern "C" {
         pub fn __get_free_pages(gfp_mask: u32, order: u32) -> usize;
         pub fn free_pages(addr: usize, order: u32);
         pub fn virt_to_phys(virt: usize) -> u64;
@@ -23,24 +23,20 @@ mod linux_ffi {
 }
 
 // ============================================
-// PRINTK - Fonctions wrapper (pas de macro cassée)
+// PRINTK
 // ============================================
 
 #[inline]
 pub unsafe fn pr_alert(msg: &str) {
-    // printk attend un null-terminated C string
-    // On utilise une approche simple : buffer statique temporaire
-    // NOTE: en production, utiliser une meilleure stratégie
-    let bytes = msg.as_bytes();
+    let fmt = b"%s\0".as_ptr();
     let mut buf = [0u8; 256];
-    let len = core::cmp::min(bytes.len(), 255);
-    buf[..len].copy_from_slice(&bytes[..len]);
-    buf[len] = 0;
-    linux_ffi::printk(buf.as_ptr());
+    let len = core::cmp::min(msg.len(), 255);
+    buf[..len].copy_from_slice(&msg.as_bytes()[..len]);
+    linux_ffi::printk(fmt, buf.as_ptr());
 }
 
 // ============================================
-// CPUID + MSR - Corrigés
+// CPUID
 // ============================================
 
 #[derive(Debug, Clone, Copy)]
@@ -55,20 +51,27 @@ pub struct CpuidResult {
 pub unsafe fn cpuid(eax_in: u32, ecx_in: u32) -> CpuidResult {
     let mut eax = eax_in;
     let mut ecx = ecx_in;
-    let mut ebx_out: u32;
-    let mut edx_out: u32;
 
-    asm!(
-        "push rbx",           // Sauvegarde rbx
-        "cpuid",
-        "mov {tmp:e}, ebx",   // Copie ebx dans tmp
-        "pop rbx",            // Restauration rbx
-        tmp = lateout(reg) ebx_out,
-        inout("eax") eax,
-        inout("ecx") ecx,
-        lateout("edx") edx_out,
-        options(nostack, preserves_flags),
-    );
+    let ebx_out: u32;
+    let edx_out: u32;
+
+    unsafe {
+        asm!(
+            "push rbx",
+            "cpuid",
+            "mov {tmp:e}, ebx",
+            "pop rbx",
+
+            tmp = lateout(reg) ebx_out,
+
+            inout("eax") eax,
+            inout("ecx") ecx,
+
+            lateout("edx") edx_out,
+
+            options(preserves_flags),
+        );
+    }
 
     CpuidResult {
         eax,
@@ -78,43 +81,67 @@ pub unsafe fn cpuid(eax_in: u32, ecx_in: u32) -> CpuidResult {
     }
 }
 
+// ============================================
+// MSR
+// ============================================
+
 #[inline]
 pub unsafe fn read_msr(msr: u32) -> u64 {
     let low: u32;
     let high: u32;
-    asm!(
-        "rdmsr",
-        in("ecx") msr,
-        out("eax") low,
-        out("edx") high,
-        options(nostack, preserves_flags),
-    );
+
+    unsafe {
+        asm!(
+            "rdmsr",
+
+            in("ecx") msr,
+
+            out("eax") low,
+            out("edx") high,
+
+            options(nostack, preserves_flags),
+        );
+    }
+
     ((high as u64) << 32) | (low as u64)
 }
+
+// ============================================
+// CR4
+// ============================================
 
 #[inline]
 pub unsafe fn read_cr4() -> u64 {
     let val: u64;
-    asm!(
-        "mov {}, cr4",
-        out(reg) val,
-        options(nostack),
-        // NOTE: pas de preserves_flags car mov cr4 peut affecter certains flags
-    );
+
+    unsafe {
+        asm!(
+            "mov {}, cr4",
+
+            out(reg) val,
+
+            options(nostack),
+        );
+    }
+
     val
 }
 
 #[inline]
 pub unsafe fn write_cr4(val: u64) {
-    asm!(
-        "mov cr4, {}",
-        in(reg) val,
-        options(nostack),
-    );
+    unsafe {
+        asm!(
+            "mov cr4, {}",
+
+            in(reg) val,
+
+            options(nostack),
+        );
+    }
 }
 
 // ============================================
-// VMXON / VMCS - Corrigé
+// VMXON REGION
 // ============================================
 
 pub struct VmxonRegion {
@@ -124,23 +151,38 @@ pub struct VmxonRegion {
 
 impl VmxonRegion {
     pub unsafe fn new() -> Option<Self> {
-        let va = linux_ffi::__get_free_pages(
-            linux_ffi::GFP_KERNEL | linux_ffi::__GFP_ZERO,
-            0
-        );
+        let va = unsafe {
+            linux_ffi::__get_free_pages(
+                linux_ffi::GFP_KERNEL | linux_ffi::__GFP_ZERO,
+                0,
+            )
+        };
+
         if va == 0 {
             return None;
         }
 
-        let pa = linux_ffi::virt_to_phys(va);
+        let pa = unsafe { linux_ffi::virt_to_phys(va) };
+
+        // VMXON region must be page aligned
         if (pa & 0xFFF) != 0 {
-            linux_ffi::free_pages(va, 0);
+            unsafe {
+                linux_ffi::free_pages(va, 0);
+            }
+
             return None;
         }
 
-        // Écriture du VMX revision ID
-        let vmx_basic = read_msr(0x480);
-        core::ptr::write_volatile(va as *mut u32, vmx_basic as u32);
+        // IA32_VMX_BASIC
+        let vmx_basic = unsafe { read_msr(0x480) };
+
+        // Write VMCS revision identifier
+        unsafe {
+            core::ptr::write_volatile(
+                va as *mut u32,
+                vmx_basic as u32,
+            );
+        }
 
         Some(Self { va, pa })
     }
@@ -149,129 +191,202 @@ impl VmxonRegion {
         let mut cf: u8;
         let mut zf: u8;
 
-        asm!(
-            "vmxon [{0}]",
-            "setc {1}",      // CF = 1 si erreur
-            "setz {2}",      // ZF = 1 si VMXON déjà actif
-            in(reg) &self.pa,
-            out(reg_byte) cf,
-            out(reg_byte) zf,
-            options(nostack),
-        );
+        let pa_ptr = &self.pa as *const u64;
+
+        unsafe {
+            asm!(
+                "vmxon [{addr}]",
+
+                "setc {cf}",
+                "setz {zf}",
+
+                addr = in(reg) pa_ptr,
+
+                cf = out(reg_byte) cf,
+                zf = out(reg_byte) zf,
+
+                options(nostack),
+            );
+        }
 
         if cf != 0 || zf != 0 {
             return Err(());
         }
+
         Ok(())
     }
 
     pub unsafe fn deactivate(&self) {
-        asm!("vmxoff", options(nostack, preserves_flags));
+        unsafe {
+            asm!(
+                "vmxoff",
+                options(nostack, preserves_flags),
+            );
+        }
     }
 
-    pub fn get_va(&self) -> usize {
+    pub fn va(&self) -> usize {
         self.va
     }
 
-    pub fn get_pa(&self) -> u64 {
+    pub fn pa(&self) -> u64 {
         self.pa
     }
 }
 
-impl Drop for VmxonRegion {
-    fn drop(&mut self) {
-        unsafe {
-            // NOTE: vmxoff doit être appelé AVANT free_pages
-            // C'est la responsabilité de l'appelant de le faire
-            linux_ffi::free_pages(self.va, 0);
-        }
-    }
-}
-
 // ============================================
-// STOCKAGE GLOBAL - 
+// GLOBAL STORAGE
 // ============================================
 
-static VMXON_REGION: AtomicPtr<VmxonRegion> = AtomicPtr::new(core::ptr::null_mut());
+static VMXON_REGION: AtomicPtr<VmxonRegion> =
+    AtomicPtr::new(core::ptr::null_mut());
 
 // ============================================
-// MODULE INIT / EXIT - 
+// MODULE INIT
 // ============================================
 
 #[no_mangle]
 pub extern "C" fn vantablack_init() -> i32 {
     unsafe {
-        // 1. Vérification CPUID
+        pr_alert("vantablack_init()\n");
+
+        // ====================================
+        // CPUID CHECK
+        // ====================================
+
         let cpu = cpuid(1, 0);
-        let vmx_bit = (cpu.ecx >> 5) & 1;
-        if vmx_bit == 0 {
-            pr_alert("VMX not available\\n");
+
+        let vmx_supported = ((cpu.ecx >> 5) & 1) != 0;
+
+        if !vmx_supported {
+            pr_alert("VMX unsupported\n");
             return -1;
         }
 
-        // 2. Vérification MSR IA32_FEATURE_CONTROL
-        let msr = read_msr(0x3A);
-        if (msr & 1) == 0 || (msr & (1 << 2)) == 0 {
-            pr_alert("VMX disabled by BIOS\\n");
+        pr_alert("VMX supported\n");
+
+        // ====================================
+        // IA32_FEATURE_CONTROL
+        // ====================================
+
+        let feature_control = read_msr(0x3A);
+
+        let lock_bit = (feature_control & 1) != 0;
+
+        let vmx_enabled = (feature_control & (1 << 2)) != 0;
+
+        if !lock_bit || !vmx_enabled {
+            pr_alert("VMX disabled in BIOS\n");
             return -1;
         }
 
-        pr_alert("CPUID/MSR checks passed\\n");
+        pr_alert("FEATURE_CONTROL ok\n");
 
-        // 3. Vérification et activation CR4.VMXE
+        // ====================================
+        // ENABLE CR4.VMXE
+        // ====================================
+
         let mut cr4 = read_cr4();
-        cr4 |= 1 << 13; // VMXE
+        cr4 |= 1 << 13;  
         write_cr4(cr4);
 
-        // 4. Allocation et activation VMXON
+        pr_alert("CR4.VMXE enabled\n");
+
+        // ====================================
+        // ALLOC VMXON REGION
+        // ====================================
+
         let vmxon = match VmxonRegion::new() {
             Some(v) => v,
+
             None => {
-                pr_alert("VMXON allocation failed\\n");
+                pr_alert("VMXON allocation failed\n");
                 return -1;
             }
         };
 
-        if let Err(_) = vmxon.activate() {
-            pr_alert("VMXON failed\\n");
+        pr_alert("VMXON region allocated\n");
+
+        // ====================================
+        // VMXON
+        // ====================================
+
+        if vmxon.activate().is_err() {
+            pr_alert("VMXON failed\n");
+                linux_ffi::free_pages(vmxon.va(), 0);
+
             return -1;
         }
 
-        // 5. Stockage global pour éviter le drop
-        let boxed = alloc::boxed::Box::into_raw(alloc::boxed::Box::new(vmxon));
-        VMXON_REGION.store(boxed, Ordering::SeqCst);
+        pr_alert("VMXON success\n");
 
-        pr_alert("VMXON SUCCESS!\\n");
+        // ====================================
+        // STORE GLOBALLY
+        // ====================================
+
+	let boxed = Box::into_raw(
+    	Box::<VmxonRegion, Kmalloc>::new(
+        	vmxon,
+       	 flags::GFP_KERNEL,
+    	)
+    .unwrap(),
+	);
+        VMXON_REGION.store(
+            boxed,
+            Ordering::SeqCst,
+        );
+
+        pr_alert("vantablack initialized\n");
     }
 
     0
 }
 
+// ============================================
+// MODULE EXIT
+// ============================================
+
 #[no_mangle]
 pub extern "C" fn vantablack_exit() {
     unsafe {
+        pr_alert("vantablack_exit()\n");
+
         let ptr = VMXON_REGION.load(Ordering::SeqCst);
-        if !ptr.is_null() {
-            // 1. Désactiver VMX avant de libérer la mémoire
-            (*ptr).deactivate();
-            pr_alert("VMXOFF\\n");
 
-            // 2. Libérer la mémoire
-            let _ = alloc::boxed::Box::from_raw(ptr);
-            VMXON_REGION.store(core::ptr::null_mut(), Ordering::SeqCst);
+        if ptr.is_null() {
+            pr_alert("No VMXON region\n");
+            return;
         }
-    }
-}
 
-// ============================================
-// PANIC HANDLER
-// ============================================
+        // ====================================
+        // VMXOFF
+        // ====================================
 
-#[panic_handler]
-fn panic(_info: &PanicInfo<'_>) -> ! {
-    loop {
-        unsafe {
-            asm!("hlt", options(nomem, nostack));
-        }
+        (*ptr).deactivate();
+
+        pr_alert("VMXOFF done\n");
+
+        // ====================================
+        // FREE PAGES
+        // ====================================
+
+        linux_ffi::free_pages(
+            (*ptr).va(),
+            0,
+        );
+
+        pr_alert("Pages freed\n");
+
+        // ====================================
+        // FREE BOX
+        // ====================================
+
+        let _ = Box::from_raw_in(ptr, Kmalloc);
+        VMXON_REGION.store(
+            core::ptr::null_mut(),
+            Ordering::SeqCst,
+        );
+
+        pr_alert("vantablack unloaded\n");
     }
 }
