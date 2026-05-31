@@ -1,4 +1,5 @@
 #![no_main]
+#![allow(missing_docs, unreachable_pub, dead_code)]
 
 use core::arch::asm;
 use core::sync::atomic::{AtomicPtr, Ordering};
@@ -32,7 +33,9 @@ pub unsafe fn pr_alert(msg: &str) {
     let mut buf = [0u8; 256];
     let len = core::cmp::min(msg.len(), 255);
     buf[..len].copy_from_slice(&msg.as_bytes()[..len]);
+    unsafe {
     linux_ffi::printk(fmt, buf.as_ptr());
+}
 }
 
 // ============================================
@@ -388,7 +391,7 @@ pub extern "C" fn vantablack_exit() {
         // FREE BOX
         // ====================================
 
-        let _ = Box::from_raw_in(ptr, Kmalloc);
+        let _ = Box::<VmxonRegion, Kmalloc>::from_raw(ptr);
         VMXON_REGION.store(
             core::ptr::null_mut(),
             Ordering::SeqCst,
