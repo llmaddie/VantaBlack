@@ -12,11 +12,11 @@ use kernel::alloc::flags;
 
 mod linux_ffi {
     unsafe extern "C" {
-        pub fn __get_free_pages(gfp_mask: u32, order: u32) -> usize;
-        pub fn free_pages(addr: usize, order: u32);
-        pub fn virt_to_phys(virt: usize) -> u64;
-        pub fn printk(fmt: *const u8, ...);
-        pub fn smp_processor_id() -> u32;
+        pub fn vb_get_free_pages(gfp_mask: u32, order: u32) -> usize;
+        pub fn vb_free_pages(addr: usize, order: u32);
+        pub fn vb_virt_to_phys(virt: usize) -> u64;
+        pub fn vb_printk(str: *const u8);
+        pub fn vb_smp_processor_id() -> u32;
     }
 
     pub const GFP_KERNEL: u32 = 0xCC0;
@@ -26,16 +26,15 @@ mod linux_ffi {
 // ============================================
 // PRINTK
 // ============================================
-
 #[inline]
 pub unsafe fn pr_alert(msg: &str) {
-    let fmt = b"%s\0".as_ptr();
     let mut buf = [0u8; 256];
     let len = core::cmp::min(msg.len(), 255);
     buf[..len].copy_from_slice(&msg.as_bytes()[..len]);
+    buf[len] = 0;
     unsafe {
-    linux_ffi::printk(fmt, buf.as_ptr());
-}
+        linux_ffi::vb_printk(buf.as_ptr());
+    }
 }
 
 // ============================================
