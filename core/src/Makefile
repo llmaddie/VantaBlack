@@ -1,3 +1,10 @@
+obj-m += vantablack.o
+vantablack-y := main.o helpers.o
+
+# ============================================
+# CONFIG
+# ============================================
+
 KDIR ?= /home/mad/linux
 PWD := $(shell pwd)
 
