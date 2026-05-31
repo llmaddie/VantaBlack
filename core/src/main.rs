@@ -287,7 +287,7 @@ pub extern "C" fn vantablack_init() -> i32 {
         // ====================================
 
         let mut cr4 = read_cr4();
-        cr4 |= 1 << 13;  
+        cr4 |= 1 << 13;   
         write_cr4(cr4);
 
         pr_alert("CR4.VMXE enabled\n");
@@ -342,7 +342,7 @@ pub extern "C" fn vantablack_init() -> i32 {
     0
 }
 
-// ============================================
+/// ============================================
 // MODULE EXIT
 // ============================================
 
@@ -359,12 +359,20 @@ pub extern "C" fn vantablack_exit() {
         }
 
         // ====================================
-        // VMXOFF
+        // VMXOFF 
         // ====================================
 
         (*ptr).deactivate();
-
         pr_alert("VMXOFF done\n");
+
+        // ====================================
+        // DISABLE CR4.VMXE
+        // ====================================
+
+        let mut cr4 = read_cr4();
+        cr4 &=1(1 << 13);       
+        write_cr4(cr4);
+        pr_alert("CR4.VMXE disabled\n");
 
         // ====================================
         // FREE PAGES
@@ -374,7 +382,6 @@ pub extern "C" fn vantablack_exit() {
             (*ptr).va(),
             0,
         );
-
         pr_alert("Pages freed\n");
 
         // ====================================
