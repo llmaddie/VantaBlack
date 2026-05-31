@@ -370,7 +370,7 @@ pub extern "C" fn vantablack_exit() {
         // ====================================
 
         let mut cr4 = read_cr4();
-        cr4 &=1(1 << 13);       
+        cr4 &= !(1 << 13);     
         write_cr4(cr4);
         pr_alert("CR4.VMXE disabled\n");
 
