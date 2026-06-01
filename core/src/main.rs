@@ -154,7 +154,7 @@ pub struct VmxonRegion {
 impl VmxonRegion {
     pub unsafe fn new() -> Option<Self> {
         let va = unsafe {
-            linux_ffi::__get_free_pages(
+            linux_ffi::vb_get_free_pages(
                 linux_ffi::GFP_KERNEL | linux_ffi::__GFP_ZERO,
                 0,
             )
@@ -164,12 +164,12 @@ impl VmxonRegion {
             return None;
         }
 
-        let pa = unsafe { linux_ffi::virt_to_phys(va) };
+        let pa = unsafe { linux_ffi::vb_virt_to_phys(va) };
 
         // VMXON region must be page aligned
         if (pa & 0xFFF) != 0 {
             unsafe {
-                linux_ffi::free_pages(va, 0);
+                linux_ffi::vb_free_pages(va, 0);
             }
 
             return None;
@@ -315,7 +315,7 @@ pub extern "C" fn vantablack_init() -> i32 {
 
         if vmxon.activate().is_err() {
             pr_alert("VMXON failed\n");
-                linux_ffi::free_pages(vmxon.va(), 0);
+                linux_ffi::vb_free_pages(vmxon.va(), 0);
 
             return -1;
         }
@@ -380,7 +380,7 @@ pub extern "C" fn vantablack_exit() {
         // FREE PAGES
         // ====================================
 
-        linux_ffi::free_pages(
+        linux_ffi::vb_free_pages(
             (*ptr).va(),
             0,
         );
