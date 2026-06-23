@@ -132,6 +132,20 @@
             }
           },
           {
+            "id": "6b742dae68c657a3",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "SDM vol3 résumé.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "SDM vol3 résumé"
+            }
+          },
+          {
             "id": "6fb5e303ed4fcecd",
             "type": "leaf",
             "state": {
@@ -142,7 +156,7 @@
             }
           }
         ],
-        "currentTab": 8
+        "currentTab": 9
       }
     ],
     "direction": "vertical"
@@ -304,10 +318,11 @@
       "bases:Create new base": false
     }
   },
-  "active": "bf5d8679cdcb3ad4",
+  "active": "6b742dae68c657a3",
   "lastOpenFiles": [
-    "README.md",
     "clanker yapping.md",
+    "SDM vol3 résumé.md",
+    "README.md",
     "2025-1038-paper.pdf",
     "Research Thesis - Kernel-Level Virtualization & Advanced Memory Cloaking.md",
     "site et ref cool.md",
