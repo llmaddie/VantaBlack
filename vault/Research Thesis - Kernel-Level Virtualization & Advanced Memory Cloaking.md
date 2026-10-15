@@ -199,23 +199,7 @@ Now we can officially jump to the second chapter !
 
 
 for introduce what is **VMXON** and **VMCS**  **VMXON** is the Intel VT-x structure used to enable VMX operation (hardware virtualization mode) on a CPU core.
-Before launching a hypervisor, the LKM must allocate a **4KB aligned physical memory region** for the VMXON region, initialize it with the CPU VMX revision ID (from `IA32_VMX_BASIC` MSR), then execute the `VMXON` instruction with its physical address.4
-
-**VMCS (Virtual Machine Control Structure)** is the core data structure used by the hypervisor to manage a virtual machine state.  
-
-It stores:
-
-- guest CPU state,
-- host state,
-- VM-exit handlers,
-- execution controls.
-
-Like VMXON, the VMCS requires:
-
-- a dedicated **4KB aligned page**,
-- physical contiguous memory,
-- initialization with the VMX revision ID,
-- activation through `VMPTRLD`.
+Before launching a hypervisor, the LKM must allocate a **4KB aligned physical memory region** for the VMXON region, initialize it with the CPU VMX revision ID (from `IA32_VMX_BASIC` MSR), then execute the `VMXON` instruction with its physical address 
 
 ## 3.1 Theoretical Background
 
